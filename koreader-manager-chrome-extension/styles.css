@@ -1,0 +1,743 @@
+/* ============================================
+   CSS CUSTOM PROPERTIES
+   ============================================ */
+:root {
+  --ink: #1a1a1a;
+  --ink-soft: #4a4a4a;
+  --ink-muted: #888;
+  --paper: #faf8f5;
+  --paper-warm: #f2ede6;
+  --paper-card: #ffffff;
+  --accent: #c0582a;
+  --accent-light: #f5e8e2;
+  --accent-mid: #e8a882;
+  --green: #2a6b4f;
+  --green-light: #e3f0ea;
+  --blue: #2a5080;
+  --blue-light: #e3ecf5;
+  --note-bg: #fef9ec;
+  --note-border: #e8c96a;
+  --warn-bg: #fef1ec;
+  --warn-border: #e88a6a;
+  --success-bg: #e3f0ea;
+  --border: #e0d8ce;
+  --shadow: 0 2px 14px rgba(26, 20, 14, 0.08);
+  --shadow-lg: 0 8px 40px rgba(26, 20, 14, 0.13);
+}
+
+/* ============================================
+   RESET & BASE
+   ============================================ */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  cursor: default;
+  user-select: none;
+}
+
+/* ============================================
+   BODY — scoped per view
+   ============================================ */
+body {
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 400;
+  color: var(--ink);
+  background: var(--paper);
+}
+
+body.popup {
+  width: 550px;
+  max-height: 700px;
+  font-size: 15px; /* match Chrome's standard UI size */
+  overflow-y: auto;
+}
+
+body.fullpage {
+  min-height: 100vh;
+}
+
+body.popup::-webkit-scrollbar {
+  width: 5px;
+}
+body.popup::-webkit-scrollbar-track {
+  background: transparent;
+}
+body.popup::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+/* ============================================
+   APP HEADER
+   ============================================ */
+.app-header {
+  background: var(--ink);
+  color: var(--paper);
+  position: relative;
+  overflow: hidden;
+}
+
+.app-header::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+body.popup .app-header {
+  padding: 18px 20px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+body.popup .app-header::before {
+  background: repeating-linear-gradient(
+    -45deg,
+    transparent,
+    transparent 30px,
+    rgba(255, 255, 255, 0.025) 30px,
+    rgba(255, 255, 255, 0.025) 31px
+  );
+}
+
+body.fullpage .app-header {
+  padding: 32px 40px 28px;
+}
+body.fullpage .app-header::before {
+  background: repeating-linear-gradient(
+    -45deg,
+    transparent,
+    transparent 40px,
+    rgba(255, 255, 255, 0.02) 40px,
+    rgba(255, 255, 255, 0.02) 41px
+  );
+}
+
+/* Header sub-elements */
+.header-left {
+  position: relative;
+}
+
+.header-eyebrow {
+  font-family: 'DM Mono', monospace;
+  text-transform: uppercase;
+  color: var(--accent-mid);
+  position: relative;
+}
+body.popup .header-eyebrow {
+  font-size: 0.6em;
+  letter-spacing: 0.15em;
+  margin-bottom: 3px;
+}
+body.fullpage .header-eyebrow {
+  font-size: 0.68em;
+  letter-spacing: 0.18em;
+  margin-bottom: 6px;
+}
+
+.app-header h1 {
+  font-family: 'DM Serif Display', serif;
+  font-weight: 400;
+  color: var(--paper);
+  line-height: 1.1;
+  position: relative;
+}
+.app-header h1 em {
+  font-style: italic;
+  color: var(--accent-mid);
+}
+
+body.popup .app-header h1 {
+  font-size: 1.35em;
+}
+body.fullpage .app-header h1 {
+  font-size: 2em;
+}
+
+.header-sub {
+  font-size: 0.87em;
+  color: rgba(250, 248, 245, 0.5);
+  margin-top: 5px;
+  position: relative;
+}
+
+/* ── Popup-only: "Open in Full Tab" button ── */
+.open-tab-btn {
+  position: relative;
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(250, 248, 245, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 7px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.75em;
+  font-weight: 500;
+  padding: 7px 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.open-tab-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+  transform: translateY(-1px);
+}
+
+/* ============================================
+   TAB NAV
+   ============================================ */
+.tab-nav {
+  display: flex;
+  background: var(--paper-warm);
+  border-bottom: 1px solid var(--border);
+}
+body.popup .tab-nav {
+  padding: 0 16px;
+}
+body.fullpage .tab-nav {
+  padding: 0 40px;
+}
+
+.tab-button {
+  border: none;
+  background: transparent;
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 500;
+  color: var(--ink-muted);
+  cursor: pointer;
+  transition:
+    color 0.2s,
+    border-color 0.2s;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.tab-button:hover {
+  color: var(--ink);
+}
+.tab-button.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+body.popup .tab-button {
+  padding: 12px 16px;
+  font-size: 0.84em;
+}
+body.fullpage .tab-button {
+  padding: 15px 22px;
+  font-size: 0.9em;
+}
+
+/* ============================================
+   TAB CONTENT
+   ============================================ */
+.tab-content {
+  display: none;
+}
+.tab-content.active {
+  display: block;
+}
+
+body.popup .tab-content.active {
+  padding: 18px 18px 22px;
+}
+
+/* Fullpage uses an inner wrapper for max-width + padding */
+.tab-inner {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 36px 40px 60px;
+}
+
+/* ============================================
+   SECTION HEADINGS
+   ============================================ */
+.section-title {
+  font-family: 'DM Serif Display', serif;
+  font-weight: 400;
+  color: var(--ink);
+}
+body.popup .section-title {
+  font-size: 1.2em;
+  margin-bottom: 3px;
+}
+body.fullpage .section-title {
+  font-size: 1.55em;
+  margin-bottom: 4px;
+}
+
+.section-sub {
+  color: var(--ink-muted);
+  line-height: 1.5;
+}
+body.popup .section-sub {
+  font-size: 0.8em;
+  margin-bottom: 16px;
+}
+body.fullpage .section-sub {
+  font-size: 0.88em;
+  margin-bottom: 24px;
+  line-height: 1.55;
+}
+
+/* ============================================
+   CONTROLS BAR
+   ============================================ */
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+body.popup .controls {
+  gap: 8px;
+}
+body.fullpage .controls {
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+/* ============================================
+   BUTTONS (shared base + per-view sizing)
+   ============================================ */
+button {
+  font-family: 'DM Sans', sans-serif;
+  border: none;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+body.popup button {
+  padding: 9px 14px;
+  font-size: 0.82em;
+  border-radius: 7px;
+}
+body.fullpage button {
+  padding: 10px 18px;
+  font-size: 0.875em;
+  border-radius: 8px;
+}
+
+/* Export */
+.export-btn {
+  background: var(--accent);
+  color: white;
+}
+.export-btn:hover:not(:disabled) {
+  background: #a84a22;
+  transform: translateY(-1px);
+  box-shadow: 0 3px 10px rgba(192, 88, 42, 0.3);
+}
+body.fullpage .export-btn:hover:not(:disabled) {
+  box-shadow: 0 4px 14px rgba(192, 88, 42, 0.3);
+}
+.export-btn:disabled {
+  background: var(--border);
+  color: var(--ink-muted);
+  cursor: not-allowed;
+}
+
+/* Ghost */
+.btn-ghost {
+  background: var(--paper-card);
+  color: var(--ink-soft);
+  border: 1px solid var(--border);
+}
+.btn-ghost:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+body.fullpage .btn-ghost:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+/* Primary */
+.btn-primary {
+  background: var(--accent);
+  color: white;
+}
+.btn-primary:hover:not(:disabled) {
+  background: #a84a22;
+  transform: translateY(-1px);
+  box-shadow: 0 3px 10px rgba(192, 88, 42, 0.3);
+}
+body.fullpage .btn-primary:hover:not(:disabled) {
+  box-shadow: 0 4px 14px rgba(192, 88, 42, 0.3);
+}
+
+/* Green */
+.btn-green {
+  background: var(--green);
+  color: white;
+}
+.btn-green:hover:not(:disabled) {
+  background: #1f5239;
+  transform: translateY(-1px);
+}
+
+/* Danger */
+.btn-danger {
+  background: var(--paper-card);
+  color: #b03030;
+  border: 1px solid #e8c0c0;
+}
+.btn-danger:hover:not(:disabled) {
+  background: var(--warn-bg);
+}
+body.fullpage .btn-danger:hover:not(:disabled) {
+  border-color: var(--warn-border);
+}
+
+/* Disabled state (all variants) */
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+/* ============================================
+   BOOKMARK TREE
+   ============================================ */
+.bookmark-tree {
+  background: var(--paper-card);
+  border: 1px solid var(--border);
+  overflow-y: auto;
+  box-shadow: var(--shadow);
+}
+body.popup .bookmark-tree {
+  border-radius: 10px;
+  padding: 10px 14px;
+  max-height: 380px;
+}
+body.fullpage .bookmark-tree {
+  border-radius: 12px;
+  padding: 14px 18px;
+  max-height: 560px;
+}
+
+.bookmark-tree::-webkit-scrollbar {
+  width: 4px;
+}
+.bookmark-tree::-webkit-scrollbar-track {
+  background: transparent;
+}
+.bookmark-tree::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 2px;
+}
+body.fullpage .bookmark-tree::-webkit-scrollbar {
+  width: 5px;
+}
+body.fullpage .bookmark-tree::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+}
+
+.bookmark-item {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid transparent;
+}
+body.popup .bookmark-item {
+  padding: 4px 0;
+  gap: 8px;
+}
+body.fullpage .bookmark-item {
+  padding: 5px 0;
+  gap: 10px;
+  transition: border-color 0.15s;
+}
+.bookmark-item:hover {
+  border-bottom-color: var(--border);
+}
+
+.bookmark-item input[type='checkbox'] {
+  cursor: pointer;
+  accent-color: var(--accent);
+  flex-shrink: 0;
+  user-select: none;
+}
+body.popup .bookmark-item input[type='checkbox'] {
+  width: 14px;
+  height: 14px;
+}
+body.fullpage .bookmark-item input[type='checkbox'] {
+  width: 15px;
+  height: 15px;
+}
+
+.bookmark-item label {
+  cursor: pointer;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+body.popup .bookmark-item label {
+  font-size: 0.82em;
+  line-height: 1.35;
+}
+body.fullpage .bookmark-item label {
+  font-size: 0.87em;
+  line-height: 1.4;
+}
+
+.folder {
+  font-weight: 600;
+  color: var(--blue) !important;
+}
+.url {
+  color: var(--ink-soft) !important;
+}
+
+/* Indent levels */
+body.popup .indent-1 {
+  margin-left: 18px;
+}
+body.popup .indent-2 {
+  margin-left: 36px;
+}
+body.popup .indent-3 {
+  margin-left: 54px;
+}
+body.popup .indent-4 {
+  margin-left: 72px;
+}
+
+body.fullpage .indent-1 {
+  margin-left: 24px;
+}
+body.fullpage .indent-2 {
+  margin-left: 48px;
+}
+body.fullpage .indent-3 {
+  margin-left: 72px;
+}
+body.fullpage .indent-4 {
+  margin-left: 96px;
+}
+
+/* ============================================
+   STATUS CALLOUT
+   ============================================ */
+.status {
+  display: none;
+  border-left: 3px solid transparent;
+  line-height: 1.5;
+}
+.status.show {
+  display: block;
+}
+
+body.popup .status {
+  margin-top: 12px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 0.82em;
+}
+body.fullpage .status {
+  margin-top: 14px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  font-size: 0.87em;
+  line-height: 1.55;
+}
+
+.status.success {
+  background: var(--success-bg);
+  border-left-color: var(--green);
+  color: var(--green);
+}
+.status.error {
+  background: var(--warn-bg);
+  border-left-color: var(--warn-border);
+  color: #7a3020;
+}
+.status.scanning {
+  background: var(--note-bg);
+  border-left-color: var(--note-border);
+  color: #6b5020;
+}
+
+/* ============================================
+   KOREADER PANEL — saved IP card
+   ============================================ */
+.saved-ip-card {
+  background: var(--paper-card);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+}
+body.popup .saved-ip-card {
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+}
+body.fullpage .saved-ip-card {
+  border-radius: 12px;
+  padding: 20px 22px;
+  margin-bottom: 22px;
+}
+
+.saved-ip-label {
+  font-family: 'DM Mono', monospace;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+body.popup .saved-ip-label {
+  font-size: 0.62em;
+  margin-bottom: 4px;
+}
+body.fullpage .saved-ip-label {
+  font-size: 0.68em;
+  margin-bottom: 6px;
+}
+
+.saved-ip-value {
+  font-family: 'DM Mono', monospace;
+  font-weight: 600;
+  color: var(--ink);
+}
+body.popup .saved-ip-value {
+  font-size: 1.05em;
+  margin-bottom: 12px;
+}
+body.fullpage .saved-ip-value {
+  font-size: 1.2em;
+  margin-bottom: 14px;
+}
+
+.quick-actions {
+  display: flex;
+}
+body.popup .quick-actions {
+  gap: 8px;
+}
+body.fullpage .quick-actions {
+  gap: 10px;
+}
+
+.quick-btn {
+  flex: 1;
+  justify-content: center;
+}
+
+/* ============================================
+   INPUT GROUP
+   ============================================ */
+.input-group {
+  margin-bottom: 14px;
+}
+body.fullpage .input-group {
+  margin-bottom: 18px;
+}
+
+.input-group label {
+  display: block;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+body.popup .input-group label {
+  font-size: 0.72em;
+  margin-bottom: 6px;
+}
+body.fullpage .input-group label {
+  font-size: 0.78em;
+  margin-bottom: 8px;
+}
+
+input[type='text'] {
+  font-family: 'DM Sans', sans-serif;
+  width: 100%;
+  border: 1px solid var(--border);
+  color: var(--ink);
+  background: var(--paper-card);
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s;
+  cursor: text;
+  user-select: text;
+}
+body.popup input[type='text'] {
+  padding: 9px 12px;
+  border-radius: 7px;
+  font-size: 0.88em;
+}
+body.fullpage input[type='text'] {
+  padding: 11px 14px;
+  border-radius: 8px;
+  font-size: 0.93em;
+}
+
+input[type='text']:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-light);
+}
+
+/* ============================================
+   SPINNER
+   ============================================ */
+.spinner {
+  display: inline-block;
+  border: 2px solid var(--accent-light);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  vertical-align: middle;
+}
+body.popup .spinner {
+  width: 11px;
+  height: 11px;
+  margin-right: 5px;
+}
+body.fullpage .spinner {
+  width: 12px;
+  height: 12px;
+  margin-right: 6px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ============================================
+   FULLPAGE-ONLY: SCAN PROGRESS BAR
+   ============================================ */
+.koreader-panel {
+  max-width: 580px;
+}
+
+.scan-progress {
+  background: var(--paper-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px 18px;
+  margin-top: 14px;
+  box-shadow: var(--shadow);
+}
+.scan-progress-text {
+  font-family: 'DM Mono', monospace;
+  font-size: 0.8em;
+  color: var(--ink-soft);
+  margin-bottom: 10px;
+}
+.progress-bar {
+  width: 100%;
+  height: 5px;
+  background: var(--paper-warm);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  background: var(--accent);
+  width: 0%;
+  transition: width 0.3s;
+  border-radius: 3px;
+}

@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>KOReader Manager</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&family=DM+Mono&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body class="popup">
+    <!-- HEADER -->
+    <div class="app-header">
+      <div class="header-left">
+        <div class="header-eyebrow">Chrome Extension</div>
+        <h1>KOReader <em>Manager</em></h1>
+      </div>
+      <button class="open-tab-btn" id="openInTabBtn">↗ Full View</button>
+    </div>
+
+    <!-- TAB NAV -->
+    <div class="tab-nav">
+      <button class="tab-button active" data-tab="bookmarks">
+        📚 Bookmarks
+      </button>
+      <button class="tab-button" data-tab="koreader">📖 Kindle Finder</button>
+    </div>
+
+    <!-- BOOKMARKS TAB -->
+    <div id="bookmarks-tab" class="tab-content active">
+      <div class="section-title">Bookmark Exporter</div>
+      <div class="section-sub">
+        Select bookmarks or folders to export as a URL list.
+      </div>
+
+      <div class="controls">
+        <button id="currentTabBtn" class="btn-green">
+          📄 Send Current Tab
+        </button>
+        <button id="exportBtn" class="export-btn" disabled>
+          Export Selected (0)
+        </button>
+        <button id="selectAllBtn" class="btn-ghost">All</button>
+        <button id="deselectAllBtn" class="btn-ghost">None</button>
+      </div>
+
+      <div id="bookmarkTree" class="bookmark-tree"></div>
+      <div id="bookmarkStatus" class="status"></div>
+    </div>
+
+    <!-- KOREADER TAB -->
+    <div id="koreader-tab" class="tab-content">
+      <div class="section-title">Kindle Finder</div>
+      <div class="section-sub">
+        Find your KOReader file browser on the local network.
+      </div>
+
+      <div id="savedIpSection" style="display: none">
+        <div class="saved-ip-card">
+          <div class="saved-ip-label">Last known Kindle</div>
+          <div class="saved-ip-value" id="savedIpValue"></div>
+          <div class="quick-actions">
+            <button id="openSavedBtn" class="btn-primary quick-btn">
+              🚀 Open Files
+            </button>
+            <button id="forgetIpBtn" class="btn-danger quick-btn">
+              🗑️ Forget
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="input-group">
+        <label for="networkPrefix">Network Prefix (optional)</label>
+        <input type="text" id="networkPrefix" placeholder="e.g., 192.168.1" />
+      </div>
+
+      <div class="controls">
+        <button id="scanBtn" class="btn-primary">🔍 Scan Network</button>
+        <button id="manualBtn" class="btn-ghost">⌨️ Manual IP</button>
+      </div>
+
+      <div id="koreaderStatus" class="status"></div>
+    </div>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

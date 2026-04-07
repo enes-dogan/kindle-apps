@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "KOReader Manager",
+  "version": "1.1",
+  "description": "Export bookmarks to CSV and find KOReader device on network",
+  "permissions": [
+    "bookmarks",
+    "downloads",
+    "tabs",
+    "activeTab",
+    "notifications",
+    "storage"
+  ],
+  "host_permissions": ["http://*/*", "https://*/*"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icon.png",
+      "48": "icon.png",
+      "128": "icon.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "icons": {
+    "16": "icon.png",
+    "48": "icon.png",
+    "128": "icon.png"
+  },
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA6iltul24nblB2Xlm2UhavUcTflkn0TBqMR78a5iYG95BFZrwKaVSKm7q89/nQX+cc2n6+f36Yj/blDDZ8UZlikuNH83y1xJyeyvL8gQ1H47amJ1WV0aXQsgxuVSqz31HOr10hXtFhFGqdY+l/g5hAyXWxFZulKAxJquddJslpXlW1GnpEt/9kYnUrXbneegG+4LRRKdiyhvo0VTEHA1YCUZ3eBU4MOdG4MvLQGrKWgUmEQ2MHqANQJl+QjoZQ8JXlMHm0g3lRimVocISH3kUz2VXwBpThbwBaX/a+4CCxB2q3n34qke7waVivp/pbllJHhuR7J66YRfTk/X60tjyfQIDAQAB"
+}
