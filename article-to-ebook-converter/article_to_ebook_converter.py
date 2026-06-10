@@ -130,23 +130,69 @@ def find_csv_in_downloads():
         return None
 
 
-def select_csv_file():
+def _select_csv_file_macos():
     """
-    Open file picker dialog to select CSV file.
-    
+    Open a native macOS file picker via AppleScript (osascript).
+
+    Used as a fallback when tkinter is unavailable, and as the primary
+    picker on macOS because it reliably appears in the foreground.
+
+    Returns:
+        str or None: POSIX path to selected file, None if cancelled
+    """
+    import subprocess
+
+    downloads = str(get_downloads_folder())
+    # AppleScript: choose a .csv file, default to the Downloads folder.
+    script = f'''
+        set defaultFolder to POSIX file "{downloads}"
+        set chosenFile to choose file with prompt "Select CSV file with URLs" ¬
+            of type {{"csv", "public.comma-separated-values-text", "public.text"}} ¬
+            default location defaultFolder
+        POSIX path of chosenFile
+    '''
+    try:
+        print("\n📂 Opening file picker...")
+        result = subprocess.run(
+            ["osascript", "-e", script],
+            capture_output=True,
+            text=True
+        )
+        # User cancelled -> osascript exits non-zero with "User canceled."
+        if result.returncode != 0:
+            print("❌ No file selected")
+            return None
+
+        file_path = result.stdout.strip()
+        if not file_path:
+            print("❌ No file selected")
+            return None
+
+        print(f"✅ Selected file: {Path(file_path).name}\n")
+        return file_path
+    except Exception as e:
+        print(f"❌ Error opening file picker: {e}")
+        return None
+
+
+def _select_csv_file_tkinter():
+    """
+    Open a tkinter file picker, forced to the foreground on macOS.
+
     Returns:
         str or None: Path to selected file, None if cancelled
     """
-    if not TKINTER_AVAILABLE:
-        print("❌ File picker not available (tkinter not installed)")
-        return None
-    
     try:
         root = tk.Tk()
         root.withdraw()  # Hide the main window
-        
+        # Force the dialog to the front (otherwise it hides behind the
+        # terminal on macOS and looks like nothing happened).
+        root.attributes('-topmost', True)
+        root.update()
+
         print("\n📂 Opening file picker...")
         file_path = filedialog.askopenfilename(
+            parent=root,
             title="Select CSV file with URLs",
             filetypes=[
                 ("CSV files", "*.csv"),
@@ -154,16 +200,44 @@ def select_csv_file():
             ],
             initialdir=get_downloads_folder()
         )
-        
+        root.destroy()
+
         if not file_path:
             print("❌ No file selected")
             return None
-        
+
         print(f"✅ Selected file: {Path(file_path).name}\n")
         return file_path
     except Exception as e:
         print(f"❌ Error opening file picker: {e}")
         return None
+
+
+def select_csv_file():
+    """
+    Open a file picker dialog to select a CSV file.
+
+    On macOS, prefer the native AppleScript picker (reliable foreground
+    behavior). Elsewhere, use tkinter. Falls back to tkinter on macOS if
+    the native picker fails.
+
+    Returns:
+        str or None: Path to selected file, None if cancelled
+    """
+    if sys.platform == "darwin":
+        file_path = _select_csv_file_macos()
+        if file_path is not None:
+            return file_path
+        # If the native picker hard-failed (not a user cancel), try tkinter.
+        if TKINTER_AVAILABLE:
+            return _select_csv_file_tkinter()
+        return None
+
+    if not TKINTER_AVAILABLE:
+        print("❌ File picker not available (tkinter not installed)")
+        return None
+
+    return _select_csv_file_tkinter()
 
 
 def open_folder_in_explorer(folder_path):
