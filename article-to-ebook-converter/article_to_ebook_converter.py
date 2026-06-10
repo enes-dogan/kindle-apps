@@ -25,9 +25,11 @@ pip install readability-lxml ebooklib beautifulsoup4 requests
 import os
 import re
 import sys
+import json
 import time
 import hashlib
 import uuid
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from urllib.parse import urlparse, urljoin
 
@@ -257,6 +259,309 @@ def open_folder_in_explorer(folder_path):
         print(f"📂 Opened folder in file explorer")
     except Exception as e:
         print(f"⚠️  Could not open folder: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Config storage (remembers the user's synced KOReader folder)
+# ---------------------------------------------------------------------------
+
+APP_CONFIG_NAME = "ArticleToEbook"
+OUTPUT_SUBFOLDER = "Articles"
+
+
+def get_config_dir():
+    """
+    Get the per-user application config directory (created if needed).
+
+    Returns:
+        Path: Native config directory for this platform.
+    """
+    if sys.platform == "win32":
+        base = os.environ.get("APPDATA") or (Path.home() / "AppData" / "Roaming")
+        config_dir = Path(base) / APP_CONFIG_NAME
+    elif sys.platform == "darwin":
+        config_dir = Path.home() / "Library" / "Application Support" / APP_CONFIG_NAME
+    else:
+        base = os.environ.get("XDG_CONFIG_HOME") or (Path.home() / ".config")
+        config_dir = Path(base) / APP_CONFIG_NAME
+
+    return config_dir
+
+
+def get_config_path():
+    """Return the full path to the config.json file."""
+    return get_config_dir() / "config.json"
+
+
+def load_config():
+    """
+    Load the saved configuration.
+
+    Returns:
+        dict: Parsed config, or empty dict if missing/unreadable.
+    """
+    config_path = get_config_path()
+    try:
+        if config_path.exists():
+            with open(config_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception:
+        # Corrupt or unreadable config should never crash the app.
+        pass
+    return {}
+
+
+def save_config(config):
+    """
+    Persist the configuration to disk.
+
+    Args:
+        config (dict): Configuration to save.
+    """
+    try:
+        config_dir = get_config_dir()
+        config_dir.mkdir(parents=True, exist_ok=True)
+        with open(get_config_path(), "w", encoding="utf-8") as f:
+            json.dump(config, f, indent=2)
+    except Exception as e:
+        print(f"⚠️  Could not save config: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Syncthing discovery (passive read of config.xml — no HTTP, no API key)
+# ---------------------------------------------------------------------------
+
+def find_syncthing_config():
+    """
+    Locate Syncthing's config.xml by checking known per-platform paths.
+
+    Returns:
+        Path or None: First existing config.xml, or None if not found.
+    """
+    candidates = []
+    home = Path.home()
+
+    if sys.platform == "win32":
+        local = os.environ.get("LOCALAPPDATA")
+        if local:
+            candidates.append(Path(local) / "Syncthing" / "config.xml")
+        candidates.append(home / "AppData" / "Local" / "Syncthing" / "config.xml")
+    elif sys.platform == "darwin":
+        candidates.append(
+            home / "Library" / "Application Support" / "Syncthing" / "config.xml"
+        )
+    else:
+        # Newer Syncthing uses XDG state dir; older installs used ~/.config.
+        state = os.environ.get("XDG_STATE_HOME")
+        if state:
+            candidates.append(Path(state) / "syncthing" / "config.xml")
+        candidates.append(home / ".local" / "state" / "syncthing" / "config.xml")
+        config = os.environ.get("XDG_CONFIG_HOME")
+        if config:
+            candidates.append(Path(config) / "syncthing" / "config.xml")
+        candidates.append(home / ".config" / "syncthing" / "config.xml")
+
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+
+    return None
+
+
+def parse_syncthing_folders(xml_path):
+    """
+    Parse Syncthing's config.xml and extract configured folders.
+
+    Args:
+        xml_path (Path): Path to Syncthing config.xml.
+
+    Returns:
+        list: List of (label, path) tuples. Empty on any parse error.
+    """
+    folders = []
+    try:
+        tree = ET.parse(str(xml_path))
+        root = tree.getroot()
+        for folder in root.iter("folder"):
+            path = folder.get("path")
+            if not path:
+                continue
+            # Label is optional; fall back to the folder id, then the path.
+            label = folder.get("label") or folder.get("id") or path
+            folders.append((label, path))
+    except Exception:
+        # Schema changes or corrupt XML should degrade gracefully.
+        return []
+
+    return folders
+
+
+# ---------------------------------------------------------------------------
+# Folder picker (manual fallback when Syncthing can't be auto-detected)
+# ---------------------------------------------------------------------------
+
+def _select_folder_macos():
+    """Open a native macOS folder picker via AppleScript."""
+    import subprocess
+
+    script = '''
+        set chosenFolder to choose folder with prompt "Select your synced KOReader folder"
+        POSIX path of chosenFolder
+    '''
+    try:
+        print("\n📂 Opening folder picker...")
+        result = subprocess.run(
+            ["osascript", "-e", script],
+            capture_output=True,
+            text=True
+        )
+        if result.returncode != 0:
+            print("❌ No folder selected")
+            return None
+
+        folder_path = result.stdout.strip()
+        if not folder_path:
+            print("❌ No folder selected")
+            return None
+
+        print(f"✅ Selected folder: {folder_path}\n")
+        return folder_path
+    except Exception as e:
+        print(f"❌ Error opening folder picker: {e}")
+        return None
+
+
+def _select_folder_tkinter():
+    """Open a tkinter folder picker, forced to the foreground on macOS."""
+    try:
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes('-topmost', True)
+        root.update()
+
+        print("\n📂 Opening folder picker...")
+        folder_path = filedialog.askdirectory(
+            parent=root,
+            title="Select your synced KOReader folder",
+            initialdir=str(Path.home())
+        )
+        root.destroy()
+
+        if not folder_path:
+            print("❌ No folder selected")
+            return None
+
+        print(f"✅ Selected folder: {folder_path}\n")
+        return folder_path
+    except Exception as e:
+        print(f"❌ Error opening folder picker: {e}")
+        return None
+
+
+def select_folder():
+    """
+    Open a folder picker dialog, routed by platform.
+
+    Returns:
+        str or None: Path to selected folder, None if cancelled.
+    """
+    if sys.platform == "darwin":
+        folder_path = _select_folder_macos()
+        if folder_path is not None:
+            return folder_path
+        if TKINTER_AVAILABLE:
+            return _select_folder_tkinter()
+        return None
+
+    if not TKINTER_AVAILABLE:
+        print("❌ Folder picker not available (tkinter not installed)")
+        return None
+
+    return _select_folder_tkinter()
+
+
+# ---------------------------------------------------------------------------
+# Synced-folder resolution (detect → confirm → remember → reuse)
+# ---------------------------------------------------------------------------
+
+def _choose_from_syncthing_folders(folders):
+    """
+    Show a numbered list of Syncthing folders and let the user pick one.
+
+    Args:
+        folders (list): List of (label, path) tuples.
+
+    Returns:
+        str or None: Chosen path, or None if the user opts out.
+    """
+    print("\n📡 Found these Syncthing folders:")
+    for i, (label, path) in enumerate(folders, 1):
+        print(f"   {i}. {label}  —  {path}")
+    print(f"   {len(folders) + 1}. None of these (pick a folder manually)")
+
+    while True:
+        choice = input("\n👉 Enter the number of your synced KOReader folder: ").strip()
+        if not choice.isdigit():
+            print("   Please enter a valid number.")
+            continue
+        choice = int(choice)
+        if 1 <= choice <= len(folders):
+            return folders[choice - 1][1]
+        if choice == len(folders) + 1:
+            return None
+        print("   That number isn't in the list.")
+
+
+def resolve_synced_folder():
+    """
+    Determine the synced folder to output EPUBs into.
+
+    On first run, auto-detect via Syncthing's config.xml (with manual folder
+    pick as a fallback), confirm with the user, and remember the choice. On
+    subsequent runs, reuse the saved path silently. Re-runs discovery if the
+    saved folder no longer exists (self-healing).
+
+    Returns:
+        str or None: Path to the synced folder, or None if the user cancels.
+    """
+    config = load_config()
+    saved = config.get("synced_folder")
+
+    # Reuse a valid saved folder silently.
+    if saved:
+        if Path(saved).exists():
+            print(f"📁 Using saved synced folder: {saved}")
+            return saved
+        print(f"⚠️  Saved synced folder no longer exists: {saved}")
+        print("   Let's set it up again.\n")
+
+    # --- Discovery (first run, or self-healing after a stale path) ---
+    chosen = None
+    xml_path = find_syncthing_config()
+    if xml_path:
+        folders = parse_syncthing_folders(xml_path)
+        if folders:
+            chosen = _choose_from_syncthing_folders(folders)
+        else:
+            print("ℹ️  Syncthing config found, but it lists no folders.")
+    else:
+        print("ℹ️  Could not auto-detect Syncthing folders.")
+
+    # Fall back to a manual folder pick.
+    if not chosen:
+        print("   Please select your synced KOReader folder manually.")
+        chosen = select_folder()
+
+    if not chosen:
+        return None
+
+    # Remember the choice for next time.
+    config["synced_folder"] = chosen
+    config["output_subfolder"] = OUTPUT_SUBFOLDER
+    save_config(config)
+    print(f"💾 Saved synced folder for future runs: {chosen}")
+
+    return chosen
 
 
 class CSVToEPUBConverter:
@@ -906,7 +1211,7 @@ def main():
         print("  3. Download images from articles")
         print("  4. Convert links to non-clickable underlined text")
         print("  5. Create EPUB files with clean formatting")
-        print("  6. Save EPUBs to Downloads/EPUBS folder")
+        print("  6. Save EPUBs into your synced KOReader folder")
         print("  7. Set website name as author (e.g., Wikipedia)")
         print("  8. Auto-delete the CSV file when done")
         print("="*60 + "\n")
@@ -924,9 +1229,15 @@ def main():
                 input("Press Enter to exit...")
                 return
         
-        # Step 3: Setup output directory
-        downloads = get_downloads_folder()
-        output_folder = downloads / "EPUBS"
+        # Step 3: Resolve the synced KOReader folder (detect → confirm → remember)
+        print("\n🔍 Step 2: Locating your synced KOReader folder...")
+        synced_folder = resolve_synced_folder()
+        if not synced_folder:
+            print("\n❌ No synced folder selected. Exiting.\n")
+            input("Press Enter to exit...")
+            return
+
+        output_folder = Path(synced_folder) / OUTPUT_SUBFOLDER
         print(f"\n📁 Output folder: {output_folder}\n")
         
         # Step 4: Create converter and process
