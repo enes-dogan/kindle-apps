@@ -3,16 +3,23 @@
 chrome_koreader_export.py
 ==========================
 
-Finds every Chrome bookmark folder named "koreader" (case-insensitive, any
-number of them, anywhere in the bookmark tree of a chosen profile), combines
-all the bookmarks (websites) inside them into one CSV file on your Desktop,
-and then empties those folders (the folders themselves stay - they just lose
-their bookmarks) so you can keep dropping new ones in.
+Finds every Chrome bookmark folder with a chosen name (default "koreader",
+case-insensitive, any number of them, anywhere in the bookmark tree of a
+chosen profile), combines all the bookmarks (websites) inside them into one
+CSV file (urls.csv) in your Downloads folder, and optionally empties those
+folders (the folders themselves stay - they just lose their bookmarks) so you
+can keep dropping new ones in.
+
+The CSV is written as "urls.csv" (no timestamp) so it can be picked up
+directly by article_to_ebook_converter.py.
 
 USAGE
 -----
     python chrome_koreader_export.py
     (Windows: py chrome_koreader_export.py  or  python chrome_koreader_export.py)
+
+This also works when packaged as a standalone executable, e.g.:
+    pyinstaller --onefile --console --name "Chrome KOReader Export" chrome_koreader_export.py
 
 BEFORE YOU RUN THIS
 --------------------
@@ -22,8 +29,13 @@ BEFORE YOU RUN THIS
   * A timestamped backup of the Bookmarks file is made automatically, right
     next to the original, before anything is changed.
 
-You can change the folder name it looks for, or how many example sites are
-shown per profile, in the SETTINGS section below.
+SETTINGS
+--------
+Your choices (Chrome profile, bookmark folder name, whether to empty the
+folder afterwards) are saved to a small config.json file so you aren't asked
+every time. Before each run you'll get a chance to change any of them,
+defaulting to whatever you used last time. The default folder name and the
+number of example sites shown per profile can still be changed below.
 """
 
 import csv
@@ -34,6 +46,7 @@ import os
 import platform
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -41,10 +54,67 @@ from urllib.parse import urlparse
 # SETTINGS
 # ---------------------------------------------------------------------
 
-TARGET_FOLDER_NAME = "koreader"   # folder name to look for (case-insensitive)
-SAMPLE_COUNT = 8                  # how many example sites to show per profile
+DEFAULT_TARGET_FOLDER_NAME = "koreader"  # default folder name (case-insensitive)
+SAMPLE_COUNT = 8                         # how many example sites to show per profile
 
 CHROME_EPOCH = dt.datetime(1601, 1, 1)
+
+
+# ---------------------------------------------------------------------
+# Persistent settings (works for `python script.py` and a frozen exe)
+# ---------------------------------------------------------------------
+
+APP_CONFIG_NAME = "ChromeKOReaderExport"
+
+
+def get_config_dir() -> Path:
+    """Return the per-user application config directory (created if needed).
+
+    Uses the same native locations as article_to_ebook_converter.py
+    (%APPDATA% on Windows, ~/Library/Application Support on macOS,
+    $XDG_CONFIG_HOME or ~/.config on Linux), so it works identically
+    whether this is run with `python chrome_koreader_export.py` or as a
+    PyInstaller --onefile executable.
+    """
+    if sys.platform == "win32":
+        base = os.environ.get("APPDATA") or (Path.home() / "AppData" / "Roaming")
+        config_dir = Path(base) / APP_CONFIG_NAME
+    elif sys.platform == "darwin":
+        config_dir = Path.home() / "Library" / "Application Support" / APP_CONFIG_NAME
+    else:
+        base = os.environ.get("XDG_CONFIG_HOME") or (Path.home() / ".config")
+        config_dir = Path(base) / APP_CONFIG_NAME
+
+    return config_dir
+
+
+def get_config_path() -> Path:
+    """Return the full path to the config.json file."""
+    return get_config_dir() / "config.json"
+
+
+def load_config() -> dict:
+    """Load saved settings, or return {} if missing/unreadable."""
+    config_path = get_config_path()
+    try:
+        if config_path.exists():
+            with open(config_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception:
+        # Corrupt or unreadable config should never crash the app.
+        pass
+    return {}
+
+
+def save_config(config: dict) -> None:
+    """Persist settings to disk."""
+    try:
+        config_dir = get_config_dir()
+        config_dir.mkdir(parents=True, exist_ok=True)
+        with open(get_config_path(), "w", encoding="utf-8") as f:
+            json.dump(config, f, indent=2)
+    except Exception as e:
+        print(f"⚠️  Could not save settings: {e}")
 
 
 # ---------------------------------------------------------------------
@@ -73,14 +143,39 @@ def get_chrome_user_data_dir() -> Path:
         return home / ".config" / "google-chrome"
 
 
-def get_desktop_dir() -> Path:
-    home = Path.home()
-    for candidate in (home / "Desktop", home / "OneDrive" / "Desktop"):
-        if candidate.exists():
-            return candidate
-    default = home / "Desktop"
-    default.mkdir(parents=True, exist_ok=True)
-    return default
+def get_downloads_dir() -> Path:
+    """Return the OS's default Downloads directory (created if needed).
+
+    Mirrors get_downloads_folder() in article_to_ebook_converter.py so the
+    urls.csv this script writes ends up exactly where that script looks for
+    it.
+    """
+    if sys.platform == "win32":
+        try:
+            import winreg
+            sub_key = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders"
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, sub_key) as key:
+                downloads_path = winreg.QueryValueEx(
+                    key, "{374DE290-123F-4565-9164-39C4925E467B}"
+                )[0]
+                return Path(downloads_path)
+        except Exception:
+            return Path.home() / "Downloads"
+    elif sys.platform == "darwin":
+        return Path.home() / "Downloads"
+    else:
+        try:
+            xdg_config = Path.home() / ".config" / "user-dirs.dirs"
+            if xdg_config.exists():
+                with open(xdg_config, "r") as f:
+                    for line in f:
+                        if "XDG_DOWNLOAD_DIR" in line:
+                            path = line.split("=")[1].strip().strip('"')
+                            path = path.replace("$HOME", str(Path.home()))
+                            return Path(path)
+        except Exception:
+            pass
+        return Path.home() / "Downloads"
 
 
 def is_chrome_running() -> bool:
@@ -171,21 +266,22 @@ def collect_sample_domains(bookmarks_data, limit=SAMPLE_COUNT):
 # Finding / exporting / clearing target folders
 # ---------------------------------------------------------------------
 
-def find_target_folders(node, path):
-    """Find every descendant folder named TARGET_FOLDER_NAME (case-insensitive).
+def find_target_folders(node, path, target_name):
+    """Find every descendant folder named target_name (case-insensitive).
 
     Once a folder matches, its subtree is not searched further for
     additional matches (it's treated as one unit - see collect_urls).
     """
     results = []
+    target_lower = target_name.lower()
     for child in node.get("children", []):
         if child.get("type") != "folder":
             continue
         child_path = f"{path}/{child.get('name', '')}"
-        if child.get("name", "").strip().lower() == TARGET_FOLDER_NAME.lower():
+        if child.get("name", "").strip().lower() == target_lower:
             results.append((child, child_path))
         else:
-            results.extend(find_target_folders(child, child_path))
+            results.extend(find_target_folders(child, child_path, target_name))
     return results
 
 
@@ -251,13 +347,92 @@ def chrome_time_to_str(value) -> str:
         return ""
 
 
+def resolve_saved_profile(listed, saved_profile_name):
+    """Return the index (1-based) of a previously-saved profile folder name
+    within `listed`, or None if not found / not saved."""
+    if not saved_profile_name:
+        return None
+    for i, profile_dir in enumerate(listed, 1):
+        if profile_dir.name == saved_profile_name:
+            return i
+    return None
+
+
+def prompt_settings(config, listed, display_names):
+    """Show current settings (from config / defaults) and let the user
+    change them, defaulting to previously saved values.
+
+    Returns a tuple: (chosen_dir, target_folder_name, empty_after_export)
+    """
+    # --- Determine current defaults -----------------------------------
+    saved_profile_index = resolve_saved_profile(listed, config.get("chrome_profile"))
+    default_profile_index = saved_profile_index or 1
+
+    default_folder_name = config.get("bookmark_folder_name", DEFAULT_TARGET_FOLDER_NAME)
+    default_empty = config.get("empty_folder_after_export", False)
+
+    print("\nCurrent settings:")
+    default_dir = listed[default_profile_index - 1]
+    default_label = display_names.get(default_dir.name, "")
+    default_title = (f"{default_dir.name} ({default_label})"
+                      if default_label else default_dir.name)
+    print(f"  Chrome profile : [{default_profile_index}] {default_title}")
+    print(f"  Folder name    : {default_folder_name}")
+    print(f"  Empty folder after export? {'Yes' if default_empty else 'No'}")
+
+    change = input("\nChange these settings? [y/N]: ").strip().lower()
+
+    if change != "y":
+        chosen_dir = default_dir
+        target_folder_name = default_folder_name
+        empty_after_export = default_empty
+    else:
+        # --- Chrome profile --------------------------------------------
+        while True:
+            choice = input(
+                f"Select a Chrome profile (1-{len(listed)}) "
+                f"[{default_profile_index}]: "
+            ).strip()
+            if choice == "":
+                chosen_dir = listed[default_profile_index - 1]
+                break
+            if choice.isdigit() and 1 <= int(choice) <= len(listed):
+                chosen_dir = listed[int(choice) - 1]
+                break
+            print("Please enter a valid number.")
+
+        # --- Bookmark folder name ----------------------------------------
+        folder_input = input(
+            f"Bookmark folder name to export [{default_folder_name}]: "
+        ).strip()
+        target_folder_name = folder_input or default_folder_name
+
+        # --- Empty folder afterwards? -------------------------------------
+        default_hint = "Y/n" if default_empty else "y/N"
+        empty_input = input(
+            f"Empty this folder in Chrome after export? [{default_hint}]: "
+        ).strip().lower()
+        if empty_input == "":
+            empty_after_export = default_empty
+        else:
+            empty_after_export = empty_input == "y"
+
+    # --- Persist whatever we ended up with ------------------------------
+    config["chrome_profile"] = chosen_dir.name
+    config["bookmark_folder_name"] = target_folder_name
+    config["empty_folder_after_export"] = empty_after_export
+    save_config(config)
+
+    return chosen_dir, target_folder_name, empty_after_export
+
+
 # ---------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------
 
 def main():
     print("=" * 64)
-    print(f" Chrome '{TARGET_FOLDER_NAME}' bookmarks -> CSV exporter")
+    print(" Chrome KOReader bookmarks -> CSV exporter")
     print("=" * 64)
 
     if is_chrome_running():
@@ -307,16 +482,15 @@ def main():
         print("No readable profiles found.")
         return
 
-    while True:
-        choice = input(f"Select a profile (1-{len(listed)}): ").strip()
-        if choice.isdigit() and 1 <= int(choice) <= len(listed):
-            chosen_dir = listed[int(choice) - 1]
-            break
-        print("Please enter a valid number.")
+    config = load_config()
+    chosen_dir, target_folder_name, empty_after_export = prompt_settings(
+        config, listed, display_names
+    )
 
     bookmarks_path = chosen_dir / "Bookmarks"
     print(f"\nUsing profile: {chosen_dir.name}")
     print(f"Bookmarks file: {bookmarks_path}")
+    print(f"Folder name: {target_folder_name}")
 
     data = load_json(bookmarks_path)  # fresh read, in case anything changed
 
@@ -330,15 +504,15 @@ def main():
         root = data.get("roots", {}).get(root_key)
         if not root:
             continue
-        if root.get("name", "").strip().lower() == TARGET_FOLDER_NAME.lower():
+        if root.get("name", "").strip().lower() == target_folder_name.lower():
             matches.append((root, label))
-        matches.extend(find_target_folders(root, label))
+        matches.extend(find_target_folders(root, label, target_folder_name))
 
     if not matches:
-        print(f"\nNo folder named '{TARGET_FOLDER_NAME}' was found in this profile.")
+        print(f"\nNo folder named '{target_folder_name}' was found in this profile.")
         return
 
-    print(f"\nFound {len(matches)} folder(s) named '{TARGET_FOLDER_NAME}':")
+    print(f"\nFound {len(matches)} folder(s) named '{target_folder_name}':")
     all_urls = []
     for folder_node, path in matches:
         urls = collect_urls(folder_node, path)
@@ -351,9 +525,9 @@ def main():
 
     print(f"\nTotal bookmarks to export: {len(all_urls)}")
 
-    desktop = get_desktop_dir()
-    timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
-    csv_path = desktop / f"{TARGET_FOLDER_NAME}_bookmarks_{timestamp}.csv"
+    downloads = get_downloads_dir()
+    downloads.mkdir(parents=True, exist_ok=True)
+    csv_path = downloads / "urls.csv"
 
     try:
         with open(csv_path, "w", newline="", encoding="utf-8") as f:
@@ -373,14 +547,10 @@ def main():
 
     print(f"\nCSV created: {csv_path}")
 
-    answer = input(
-        f"\nRemove these {len(all_urls)} bookmark(s) from the "
-        f"'{TARGET_FOLDER_NAME}' folder(s) in Chrome now?\n"
-        f"(The folder(s) themselves stay - just emptied. A backup is made first.) [y/N]: "
-    ).strip().lower()
-
-    if answer != "y":
+    if not empty_after_export:
         print("\nDone. CSV was created; your Chrome bookmarks were left untouched.")
+        print("(Set 'Empty folder after export' to Yes next time, or change "
+              "settings now, to remove these bookmarks automatically.)")
         return
 
     timestamp2 = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -406,7 +576,7 @@ def main():
         return
 
     print(f"\nRemoved {len(all_urls)} bookmark(s) from the "
-          f"'{TARGET_FOLDER_NAME}' folder(s) (folders kept, now empty).")
+          f"'{target_folder_name}' folder(s) (folders kept, now empty).")
     print("Start Chrome to see the change take effect.")
 
 
