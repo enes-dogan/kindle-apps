@@ -328,6 +328,224 @@ def save_config(config):
 
 
 # ---------------------------------------------------------------------------
+# Chrome bookmark clearing (reads ChromeKOReaderExport config, mirrors the
+# strip logic from chrome_koreader_export.py so the two scripts share state)
+# ---------------------------------------------------------------------------
+
+CHROME_EXPORTER_CONFIG_NAME = "ChromeKOReaderExport"
+CHROME_EPOCH = __import__("datetime").datetime(1601, 1, 1)
+
+
+def _get_chrome_exporter_config() -> dict:
+    """Load the saved settings written by chrome_koreader_export.py.
+
+    Returns an empty dict if the file is missing or unreadable — the caller
+    treats that as "no Chrome integration configured".
+    """
+    if sys.platform == "win32":
+        base = os.environ.get("APPDATA") or str(Path.home() / "AppData" / "Roaming")
+        config_path = Path(base) / CHROME_EXPORTER_CONFIG_NAME / "config.json"
+    elif sys.platform == "darwin":
+        config_path = (
+            Path.home() / "Library" / "Application Support"
+            / CHROME_EXPORTER_CONFIG_NAME / "config.json"
+        )
+    else:
+        base = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
+        config_path = Path(base) / CHROME_EXPORTER_CONFIG_NAME / "config.json"
+
+    try:
+        if config_path.exists():
+            with open(config_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return {}
+
+
+def _get_chrome_bookmarks_path(profile_name: str) -> Path | None:
+    """Return the Bookmarks file path for a given Chrome profile folder name."""
+    import platform as _platform
+    home = Path.home()
+    system = _platform.system()
+
+    override = os.environ.get("CHROME_USER_DATA_DIR")
+    if override:
+        user_data = Path(override)
+    elif system == "Windows":
+        base = os.environ.get("LOCALAPPDATA", str(home / "AppData" / "Local"))
+        user_data = Path(base) / "Google" / "Chrome" / "User Data"
+    elif system == "Darwin":
+        user_data = home / "Library" / "Application Support" / "Google" / "Chrome"
+    else:
+        user_data = home / ".config" / "google-chrome"
+
+    bookmarks = user_data / profile_name / "Bookmarks"
+    return bookmarks if bookmarks.exists() else None
+
+
+def _iter_nodes(node):
+    yield node
+    for child in node.get("children", []):
+        yield from _iter_nodes(child)
+
+
+def _find_target_folders(node, target_lower):
+    """Recursively find every folder whose name matches target_lower."""
+    results = []
+    for child in node.get("children", []):
+        if child.get("type") != "folder":
+            continue
+        if child.get("name", "").strip().lower() == target_lower:
+            results.append(child)
+        else:
+            results.extend(_find_target_folders(child, target_lower))
+    return results
+
+
+def _strip_urls(folder_node):
+    """Remove all url-type children recursively; keep sub-folders."""
+    kept = []
+    for child in folder_node.get("children", []):
+        if child.get("type") == "url":
+            continue
+        if child.get("type") == "folder":
+            _strip_urls(child)
+        kept.append(child)
+    folder_node["children"] = kept
+
+
+def _compute_checksum(data) -> str:
+    import hashlib as _hashlib
+
+    def _walk(node, md5):
+        md5.update(str(node.get("id", "")).encode("utf-8"))
+        md5.update(node.get("name", "").encode("utf-8"))
+        if node.get("type") == "url":
+            md5.update(b"url")
+            md5.update(node.get("url", "").encode("utf-8"))
+        else:
+            md5.update(b"folder")
+            for child in node.get("children", []):
+                _walk(child, md5)
+
+    md5 = _hashlib.md5()
+    roots = data.get("roots", {})
+    for key in ("bookmark_bar", "other", "synced"):
+        root = roots.get(key)
+        if root:
+            _walk(root, md5)
+    return md5.hexdigest()
+
+
+def clear_chrome_koreader_bookmarks() -> bool:
+    """Read the ChromeKOReaderExport config and empty the bookmarked folder.
+
+    Called automatically after a successful conversion so the workflow is
+    fully hands-off: bookmark → convert → folder cleared.
+
+    Returns True if bookmarks were cleared, False if skipped or failed.
+
+    Notes
+    -----
+    * Requires Chrome to be closed — same constraint as chrome_koreader_export.py.
+    * A timestamped backup of the Bookmarks file is written before any change.
+    * Chrome Sync may restore the bookmarks if it pushes a cloud snapshot after
+      the file is edited; see chrome_koreader_export.py for a full explanation.
+    """
+    import shutil as _shutil
+    import datetime as _dt
+
+    cfg = _get_chrome_exporter_config()
+    if not cfg:
+        # chrome_koreader_export.py has never been run / no config saved.
+        return False
+
+    profile_name = cfg.get("chrome_profile", "")
+    folder_name = cfg.get("bookmark_folder_name", "")
+    should_empty = cfg.get("empty_folder_after_export", False)
+
+    if not should_empty:
+        print("ℹ️  Chrome bookmark clearing is disabled in KOReader exporter settings.")
+        return False
+
+    if not profile_name or not folder_name:
+        print("⚠️  Chrome exporter config is incomplete — skipping bookmark clear.")
+        return False
+
+    bookmarks_path = _get_chrome_bookmarks_path(profile_name)
+    if not bookmarks_path:
+        print(f"⚠️  Could not find Chrome Bookmarks file for profile '{profile_name}'.")
+        return False
+
+    print(f"\n🔖 Clearing '{folder_name}' folder from Chrome bookmarks...")
+
+    try:
+        with open(bookmarks_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception as e:
+        print(f"   ⚠️  Could not read Bookmarks file: {e}")
+        return False
+
+    target_lower = folder_name.lower()
+    matches = []
+    root_labels = {
+        "bookmark_bar": "Bookmarks bar",
+        "other": "Other bookmarks",
+        "synced": "Mobile bookmarks",
+    }
+    for root_key in root_labels:
+        root = data.get("roots", {}).get(root_key)
+        if not root:
+            continue
+        if root.get("name", "").strip().lower() == target_lower:
+            matches.append(root)
+        matches.extend(_find_target_folders(root, target_lower))
+
+    if not matches:
+        print(f"   ℹ️  No folder named '{folder_name}' found — nothing to clear.")
+        return False
+
+    total_urls = sum(
+        sum(1 for n in _iter_nodes(m) if n.get("type") == "url")
+        for m in matches
+    )
+
+    if total_urls == 0:
+        print(f"   ℹ️  '{folder_name}' folder is already empty.")
+        return True
+
+    # Back up before modifying.
+    ts = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_path = bookmarks_path.with_name(f"Bookmarks.backup_{ts}")
+    try:
+        _shutil.copy2(bookmarks_path, backup_path)
+        print(f"   💾 Backup saved: {backup_path.name}")
+    except Exception as e:
+        print(f"   ⚠️  Could not create backup ({e}) — skipping bookmark clear.")
+        return False
+
+    for folder_node in matches:
+        _strip_urls(folder_node)
+
+    data["checksum"] = _compute_checksum(data)
+
+    try:
+        with open(bookmarks_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=3)
+    except Exception as e:
+        print(f"   ⚠️  Could not write Bookmarks file: {e}")
+        print(f"   Original is safe at: {backup_path.name}")
+        return False
+
+    print(f"   ✅ Cleared {total_urls} bookmark(s) from '{folder_name}' "
+          f"(folder kept, now empty).")
+    print("   ⚠️  Chrome Sync may restore them — close Chrome before running "
+          "this converter, or disable sync for bookmarks.")
+    return True
+
+
+# ---------------------------------------------------------------------------
 # Syncthing discovery (passive read of config.xml — no HTTP, no API key)
 # ---------------------------------------------------------------------------
 
@@ -1260,7 +1478,10 @@ def main():
                     print(f"🗑️  Deleted CSV file: {csv_path.name}")
             except Exception as e:
                 print(f"⚠️  Could not delete CSV file: {e}")
-            
+
+            # Clear the Chrome bookmark folder (if enabled in exporter config)
+            clear_chrome_koreader_bookmarks()
+
             # Open output folder
             print("\n📂 Opening output folder...")
             open_folder_in_explorer(str(output_folder))
